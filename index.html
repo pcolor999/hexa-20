@@ -26,14 +26,14 @@
 <script>
 const CONFIG = {
     GRID_SIZE: 9,
-    HEX_SIZE: 38, // Radius of the hexagon
+    HEX_SIZE: 43, // Increased from 38 to fill the screen edges
     COLORS: [
-        0xff0000, // Red
-        0x00ff00, // Green
-        0x0088ff, // Blue
-        0xffff00, // Yellow
+        0xff1111, // Red
+        0x11ff11, // Green
+        0x2299ff, // Blue
+        0xffff11, // Yellow
         0x00ffff, // Cyan
-        0xff00ff, // Magenta
+        0xff22ff, // Magenta
         0xff8800  // Orange
     ]
 };
@@ -57,7 +57,7 @@ class PoolHex20 extends Phaser.Scene {
         
         let totalW = (CONFIG.GRID_SIZE + 0.5) * this.hexW;
         this.offsetX = (this.scale.width - totalW) / 2 + this.hexW / 2;
-        this.offsetY = 320 + this.hexH / 2;
+        this.offsetY = 380 + this.hexH / 2; // Pushed down to give larger top UI breathing room
 
         // Generate Pool Ball Textures
         this.generateTextures();
@@ -78,42 +78,42 @@ class PoolHex20 extends Phaser.Scene {
     generateTextures() {
         const g = this.add.graphics();
         
-        // 1. Base Colored Sphere
+        // 1. Base Colored Sphere (Significantly Larger)
         g.fillStyle(0xffffff, 1);
-        g.fillCircle(30, 30, 26);
-        g.fillStyle(0xffffff, 0.5);
-        g.fillCircle(20, 18, 8); // Highlight
-        g.generateTexture('ball_base', 60, 60);
+        g.fillCircle(40, 40, 36); 
+        g.fillStyle(0xffffff, 0.4);
+        g.fillCircle(26, 24, 12); // Highlight
+        g.generateTexture('ball_base', 80, 80);
         g.clear();
 
-        // 2. White Center for the number
-        g.fillStyle(0xffffff, 1);
-        g.fillCircle(14, 14, 14);
-        g.generateTexture('ball_center', 28, 28);
+        // 2. White Center for the number (Significantly Larger)
+        g.fillStyle(0xf0f0f0, 1);
+        g.fillCircle(22, 22, 20);
+        g.generateTexture('ball_center', 44, 44);
         g.clear();
     }
 
     createUI() {
-        this.add.text(this.scale.width / 2, 50, 'POOL HEX 20', { fontSize: '48px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
-        this.add.text(this.scale.width / 2, 95, 'Match same colors to sum exactly 20', { fontSize: '20px', color: '#00ffff' }).setOrigin(0.5);
+        this.add.text(this.scale.width / 2, 60, 'POOL HEX 20', { fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '56px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
+        this.add.text(this.scale.width / 2, 115, 'Match same colors to sum exactly 20', { fontFamily: 'Arial, sans-serif', fontSize: '24px', color: '#00ffff' }).setOrigin(0.5);
         
-        this.scoreText = this.add.text(this.scale.width / 2, 145, 'Score: 0', { fontSize: '32px', color: '#ffff00' }).setOrigin(0.5);
-        this.add.text(this.scale.width / 2, 195, 'Next:', { fontSize: '24px', color: '#aaaaaa' }).setOrigin(0.5);
+        this.scoreText = this.add.text(this.scale.width / 2, 175, 'Score: 0', { fontFamily: 'Arial Black, sans-serif', fontSize: '42px', color: '#ffff00' }).setOrigin(0.5);
+        this.add.text(this.scale.width / 2, 235, 'NEXT BALLS:', { fontFamily: 'Arial, sans-serif', fontStyle: 'bold', fontSize: '24px', color: '#aaaaaa' }).setOrigin(0.5);
         
         this.nextPreviews = [];
         for (let i = 0; i < 3; i++) {
-            let container = this.add.container(this.scale.width / 2 - 60 + (i * 60), 245);
+            let container = this.add.container(this.scale.width / 2 - 80 + (i * 80), 300); // Spaced out more
             let base = this.add.sprite(0, 0, 'ball_base');
             let center = this.add.sprite(0, 0, 'ball_center');
-            let text = this.add.text(0, 0, '9', { fontSize: '18px', fontStyle: 'bold', color: '#000000' }).setOrigin(0.5);
+            let text = this.add.text(0, 0, '9', { fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '28px', color: '#111111' }).setOrigin(0.5);
             
             container.add([base, center, text]);
-            container.setScale(0.5);
+            container.setScale(0.75); // Made previews much larger
             this.nextPreviews.push({ container, base, text });
         }
 
         let restartBtn = this.add.text(this.scale.width / 2, this.scale.height - 80, 'RESTART GAME', { 
-            fontSize: '28px', backgroundColor: '#333333', padding: {x: 20, y: 10}, color: '#ffffff' 
+            fontFamily: 'Arial Black, sans-serif', fontSize: '32px', backgroundColor: '#333333', padding: {x: 30, y: 15}, color: '#ffffff' 
         }).setOrigin(0.5).setInteractive();
         restartBtn.on('pointerdown', () => this.scene.restart());
     }
@@ -139,8 +139,9 @@ class PoolHex20 extends Phaser.Scene {
 
     drawGrid() {
         const g = this.add.graphics();
-        g.lineStyle(3, 0x444444);
-        g.fillStyle(0x222222);
+        // Brightened and thickened lines for better visibility
+        g.lineStyle(4, 0x555555);
+        g.fillStyle(0x282828);
 
         for (let r = 0; r < CONFIG.GRID_SIZE; r++) {
             for (let c = 0; c < CONFIG.GRID_SIZE; c++) {
@@ -198,7 +199,13 @@ class PoolHex20 extends Phaser.Scene {
             let container = this.add.container(center.x, center.y);
             let base = this.add.sprite(0, 0, 'ball_base').setTint(color);
             let centerSpot = this.add.sprite(0, 0, 'ball_center');
-            let text = this.add.text(0, 0, number.toString(), { fontSize: '20px', fontStyle: 'bold', color: '#000000' }).setOrigin(0.5);
+            
+            // Much larger, heavier text
+            let text = this.add.text(0, 0, number.toString(), { 
+                fontFamily: 'Arial Black, Impact, sans-serif', 
+                fontSize: '34px', 
+                color: '#111111' 
+            }).setOrigin(0.5);
             
             container.add([base, centerSpot, text]);
             container.setScale(0); // For spawn animation
@@ -316,22 +323,18 @@ class PoolHex20 extends Phaser.Scene {
         });
     }
 
-    // New Game Mechanic Logic: Sum to EXACTLY 20!
     checkSum20Lines() {
         let ballsToRemove = new Set();
 
-        // Check the 3 main axes of the hex grid
         for (let r = 0; r < CONFIG.GRID_SIZE; r++) {
             for (let c = 0; c < CONFIG.GRID_SIZE; c++) {
                 for (let dir of [0, 1, 2]) { 
                     let oppDir = dir + 3;
                     
-                    // If this cell has NO neighbor in the opposite direction, it's the start of a whole line
                     if (!this.getNeighbor(r, c, oppDir)) {
                         let line = [];
                         let current = {r, c};
                         
-                        // Trace the entire line across the board
                         while (current) {
                             line.push(current);
                             current = this.getNeighbor(current.r, current.c, dir);
@@ -354,7 +357,6 @@ class PoolHex20 extends Phaser.Scene {
         let groups = [];
         let currentGroup = [];
         
-        // Step 1: Group together continuously adjacent balls of the SAME COLOR
         for (let i = 0; i < lineCoords.length; i++) {
             let pos = lineCoords[i];
             let cell = this.board[pos.r][pos.c];
@@ -375,7 +377,6 @@ class PoolHex20 extends Phaser.Scene {
         }
         if (currentGroup.length > 0) groups.push(currentGroup);
         
-        // Step 2: In each color group, find any contiguous sub-array that sums to EXACTLY 20
         for (let group of groups) {
             for (let start = 0; start < group.length; start++) {
                 let sum = 0;
@@ -386,7 +387,7 @@ class PoolHex20 extends Phaser.Scene {
                             ballsToRemove.add(`${group[k].pos.r},${group[k].pos.c}`);
                         }
                     } else if (sum > 20) {
-                        break; // Stop looking further, the sum exceeded 20
+                        break;
                     }
                 }
             }
@@ -396,7 +397,6 @@ class PoolHex20 extends Phaser.Scene {
     removeBalls(ballsSet) {
         this.isAnimating = true;
         
-        // 10 points per ball cleared in a Sum-20 match
         let count = ballsSet.size;
         this.score += count * 10;
         this.scoreText.setText(`Score: ${this.score}`);
@@ -423,10 +423,10 @@ class PoolHex20 extends Phaser.Scene {
     gameOver() {
         this.isAnimating = true;
         let overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.8).setOrigin(0);
-        this.add.text(this.scale.width / 2, this.scale.height / 2 - 50, 'GAME OVER', { fontSize: '64px', fontStyle: 'bold', color: '#ff0000' }).setOrigin(0.5);
-        this.add.text(this.scale.width / 2, this.scale.height / 2 + 20, `Final Score: ${this.score}`, { fontSize: '40px', color: '#ffffff' }).setOrigin(0.5);
+        this.add.text(this.scale.width / 2, this.scale.height / 2 - 50, 'GAME OVER', { fontFamily: 'Arial Black, sans-serif', fontSize: '64px', fontStyle: 'bold', color: '#ff0000' }).setOrigin(0.5);
+        this.add.text(this.scale.width / 2, this.scale.height / 2 + 30, `Final Score: ${this.score}`, { fontFamily: 'Arial, sans-serif', fontSize: '40px', color: '#ffffff' }).setOrigin(0.5);
         
-        let restartTxt = this.add.text(this.scale.width / 2, this.scale.height / 2 + 100, 'Tap to Restart', { fontSize: '32px', color: '#00ffff' }).setOrigin(0.5);
+        let restartTxt = this.add.text(this.scale.width / 2, this.scale.height / 2 + 120, 'Tap to Restart', { fontFamily: 'Arial Black, sans-serif', fontSize: '32px', color: '#00ffff' }).setOrigin(0.5);
         
         this.tweens.add({ targets: restartTxt, alpha: 0.2, yoyo: true, repeat: -1, duration: 500 });
 
@@ -442,7 +442,7 @@ const config = {
         width: 720,
         height: 1280
     },
-    backgroundColor: '#1a1a1a',
+    backgroundColor: '#161616', // slightly darker background
     scene: PoolHex20
 };
 
