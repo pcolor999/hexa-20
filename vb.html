@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pool Hex 20 - Mobile</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        canvas {
+            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+
+<script>
+const CONFIG = {
+    GRID_SIZE: 9,
+    HEX_SIZE: 43, // Increased from 38 to fill the screen edges
+    COLORS: [
+        0xff1111, // Red
+        0x11ff11, // Green
+        0x2299ff, // Blue
+        0xffff11, // Yellow
+        0x00ffff, // Cyan
+        0xff22ff, // Magenta
+        0xff8800  // Orange
+    ]
+};
+
+class PoolHex20 extends Phaser.Scene {
+    constructor() {
+        super('PoolHex20');
+    }
+
+    create() {
+        // Game State
+        this.board = Array(CONFIG.GRID_SIZE).fill(null).map(() => Array(CONFIG.GRID_SIZE).fill(null));
+        this.score = 0;
+        this.nextBalls = [];
+        this.selectedBall = null;
+        this.isAnimating = false;
+        
+        // Hex Layout calculations
+        this.hexW = Math.sqrt(3) * CONFIG.HEX_SIZE;
+        this.hexH = 2 * CONFIG.HEX_SIZE;
+        
+        let totalW = (CONFIG.GRID_SIZE + 0.5) * this.hexW;
+        this.offsetX = (this.scale.width - totalW) / 2 + this.hexW / 2;
+        this.offsetY = 380 + this.hexH / 2; // Pushed down to give larger top UI breathing room
+
+        // Generate Pool Ball Textures
+        this.generateTextures();
+
+        // UI & Graphics Setup
+        this.createUI();
+        this.drawGrid();
+
+        // Input
+        this.input.on('pointerdown', this.handleInput, this);
+
+        // Start Game
+        this.generateNextBalls();
+        this.spawnBalls(5); 
+        this.generateNextBalls();
+    }
+
+    generateTextures() {
+        const g = this.add.graphics();
+        
+        // 1. Base Colored Sphere (Significantly Larger)
+        g.fillStyle(0xffffff, 1);
+        g.fillCircle(40, 40, 36); 
+        g.fillStyle(0xffffff, 0.4);
+        g.fillCircle(26, 24, 12); // Highlight
+        g.generateTexture('ball_base', 80, 80);
+        g.clear();
+
+        // 2. White Center for the number (Significantly Larger)
+        g.fillStyle(0xf0f0f0, 1);
+        g.fillCircle(22, 22, 20);
+        g.generateTexture('ball_center', 44, 44);
+        g.clear();
+    }
+
+    createUI() {
+        this.add.text(this.scale.width / 2, 60, 'POOL HEX 20', { fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '56px', fontStyle: 'bold', color: '#ffffff' }).setOrigin(0.5);
+        this.add.text(this.scale.width / 2, 115, 'Match same colors to sum exactly 20', { fontFamily: 'Arial, sans-serif', fontSize: '24px', color: '#00ffff' }).setOrigin(0.5);
+        
+        this.scoreText = this.add.text(this.scale.width / 2, 175, 'Score: 0', { fontFamily: 'Arial Black, sans-serif', fontSize: '42px', color: '#ffff00' }).setOrigin(0.5);
+        this.add.text(this.scale.width / 2, 235, 'NEXT BALLS:', { fontFamily: 'Arial, sans-serif', fontStyle: 'bold', fontSize: '24px', color: '#aaaaaa' }).setOrigin(0.5);
+        
+        this.nextPreviews = [];
+        for (let i = 0; i < 3; i++) {
+            let container = this.add.container(this.scale.width / 2 - 80 + (i * 80), 300); // Spaced out more
+            let base = this.add.sprite(0, 0, 'ball_base');
+            let center = this.add.sprite(0, 0, 'ball_center');
+            let text = this.add.text(0, 0, '9', { fontFamily: 'Arial Black, Impact, sans-serif', fontSize: '28px', color: '#111111' }).setOrigin(0.5);
+            
+            container.add([base, center, text]);
+            container.setScale(0.75); // Made previews much larger
+            this.nextPreviews.push({ container, base, text });
+        }
+
+        let restartBtn = this.add.text(this.scale.width / 2, this.scale.height - 80, 'RESTART GAME', { 
+            fontFamily: 'Arial Black, sans-serif', fontSize: '32px', backgroundColor: '#333333', padding: {x: 30, y: 15}, color: '#ffffff' 
+        }).setOrigin(0.5).setInteractive();
+        restartBtn.on('pointerdown', () => this.scene.restart());
+    }
+
+    getHexCenter(row, col) {
+        let x = this.offsetX + (col + (row % 2 === 1 ? 0.5 : 0)) * this.hexW;
+        let y = this.offsetY + row * (this.hexH * 0.75);
+        return { x, y };
+    }
+
+    getNeighbor(r, c, dirIndex) {
+        // Directions: Right(0), Bottom-Right(1), Bottom-Left(2), Left(3), Top-Left(4), Top-Right(5)
+        const deltasEven = [ [0, 1], [1, 0], [1, -1], [0, -1], [-1, -1], [-1, 0] ];
+        const deltasOdd  = [ [0, 1], [1, 1], [1, 0],  [0, -1], [-1, 0],  [-1, 1] ];
+        
+        let deltas = (r % 2 === 0) ? deltasEven : deltasOdd;
+        let newR = r + deltas[dirIndex][0];
+        let newC = c + deltas[dirIndex][1];
+        
+        if (newR >= 0 && newR < CONFIG.GRID_SIZE && newC >= 0 && newC < CONFIG.GRID_SIZE) return { r: newR, c: newC };
+        return null;
+    }
+
+    drawGrid() {
+        const g = this.add.graphics();
+        // Brightened and thickened lines for better visibility
+        g.lineStyle(4, 0x555555);
+        g.fillStyle(0x282828);
+
+        for (let r = 0; r < CONFIG.GRID_SIZE; r++) {
+            for (let c = 0; c < CONFIG.GRID_SIZE; c++) {
+                let center = this.getHexCenter(r, c);
+                let points = [];
+                for (let i = 0; i < 6; i++) {
+                    let angle_rad = Math.PI / 180 * (60 * i - 30);
+                    points.push(new Phaser.Math.Vector2(center.x + CONFIG.HEX_SIZE * Math.cos(angle_rad), center.y + CONFIG.HEX_SIZE * Math.sin(angle_rad)));
+                }
+                g.fillPoints(points, true);
+                g.strokePoints(points, true);
+            }
+        }
+    }
+
+    getEmptyCells() {
+        let empty = [];
+        for (let r = 0; r < CONFIG.GRID_SIZE; r++) {
+            for (let c = 0; c < CONFIG.GRID_SIZE; c++) {
+                if (!this.board[r][c]) empty.push({ r, c });
+            }
+        }
+        return empty;
+    }
+
+    generateNextBalls() {
+        this.nextBalls = [];
+        for (let i = 0; i < 3; i++) {
+            let color = Phaser.Utils.Array.GetRandom(CONFIG.COLORS);
+            let number = Phaser.Math.Between(1, 9); // Pool ball number 1 to 9
+            
+            this.nextBalls.push({ color, number });
+            
+            this.nextPreviews[i].base.setTint(color);
+            this.nextPreviews[i].text.setText(number.toString());
+        }
+    }
+
+    spawnBalls(count) {
+        let emptyCells = this.getEmptyCells();
+        if (emptyCells.length === 0) return this.gameOver();
+
+        let spawnedCount = Math.min(count, emptyCells.length);
+        
+        for (let i = 0; i < spawnedCount; i++) {
+            let cellIndex = Phaser.Math.Between(0, emptyCells.length - 1);
+            let cell = emptyCells.splice(cellIndex, 1)[0];
+            
+            let color = count === 5 ? Phaser.Utils.Array.GetRandom(CONFIG.COLORS) : this.nextBalls[i].color;
+            let number = count === 5 ? Phaser.Math.Between(1, 9) : this.nextBalls[i].number;
+            
+            let center = this.getHexCenter(cell.r, cell.c);
+            
+            // Build the compound container for the ball
+            let container = this.add.container(center.x, center.y);
+            let base = this.add.sprite(0, 0, 'ball_base').setTint(color);
+            let centerSpot = this.add.sprite(0, 0, 'ball_center');
+            
+            // Much larger, heavier text
+            let text = this.add.text(0, 0, number.toString(), { 
+                fontFamily: 'Arial Black, Impact, sans-serif', 
+                fontSize: '34px', 
+                color: '#111111' 
+            }).setOrigin(0.5);
+            
+            container.add([base, centerSpot, text]);
+            container.setScale(0); // For spawn animation
+            
+            this.board[cell.r][cell.c] = { color, number, container, base };
+            
+            this.tweens.add({ targets: container, scale: 1, duration: 300, ease: 'Back.out' });
+        }
+
+        if (this.getEmptyCells().length === 0) {
+            this.time.delayedCall(400, () => {
+                if (this.getEmptyCells().length === 0) this.gameOver();
+            });
+        }
+    }
+
+    getHexFromPointer(x, y) {
+        let minDist = Infinity;
+        let closestHex = null;
+
+        for (let r = 0; r < CONFIG.GRID_SIZE; r++) {
+            for (let c = 0; c < CONFIG.GRID_SIZE; c++) {
+                let center = this.getHexCenter(r, c);
+                let dist = Phaser.Math.Distance.Between(x, y, center.x, center.y);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestHex = { r, c };
+                }
+            }
+        }
+        return minDist <= CONFIG.HEX_SIZE ? closestHex : null;
+    }
+
+    handleInput(pointer) {
+        if (this.isAnimating) return;
+
+        let target = this.getHexFromPointer(pointer.x, pointer.y);
+        if (!target) return;
+
+        let row = target.r;
+        let col = target.c;
+        let cell = this.board[row][col];
+
+        if (cell) {
+            if (this.selectedBall) {
+                this.selectedBall.base.clearTint();
+                this.selectedBall.base.setTint(this.selectedBall.color); 
+                this.tweens.killTweensOf(this.selectedBall.container);
+                this.selectedBall.container.setScale(1);
+            }
+            this.selectedBall = { row, col, container: cell.container, base: cell.base, color: cell.color };
+            
+            // Pulse selection
+            this.tweens.add({
+                targets: cell.container,
+                scale: 1.15,
+                duration: 300,
+                yoyo: true,
+                repeat: -1
+            });
+        } else if (this.selectedBall) {
+            let path = this.findPath(this.selectedBall.row, this.selectedBall.col, row, col);
+            if (path) this.moveBall(path, row, col);
+            else this.cameras.main.shake(200, 0.01);
+        }
+    }
+
+    findPath(startR, startC, targetR, targetC) {
+        let queue = [{ r: startR, c: startC, path: [] }];
+        let visited = Array(CONFIG.GRID_SIZE).fill(null).map(() => Array(CONFIG.GRID_SIZE).fill(false));
+        visited[startR][startC] = true;
+
+        while (queue.length > 0) {
+            let current = queue.shift();
+            if (current.r === targetR && current.c === targetC) return current.path;
+
+            for (let i = 0; i < 6; i++) {
+                let nextCell = this.getNeighbor(current.r, current.c, i);
+                if (nextCell && !visited[nextCell.r][nextCell.c] && this.board[nextCell.r][nextCell.c] === null) {
+                    visited[nextCell.r][nextCell.c] = true;
+                    queue.push({ r: nextCell.r, c: nextCell.c, path: [...current.path, {r: nextCell.r, c: nextCell.c}] });
+                }
+            }
+        }
+        return null; 
+    }
+
+    moveBall(path, targetR, targetC) {
+        this.isAnimating = true;
+        let ballData = this.board[this.selectedBall.row][this.selectedBall.col];
+        this.board[this.selectedBall.row][this.selectedBall.col] = null; 
+        
+        this.tweens.killTweensOf(ballData.container);
+        ballData.container.setScale(1);
+        this.selectedBall = null;
+
+        let tweensList = path.map(step => {
+            let center = this.getHexCenter(step.r, step.c);
+            return { x: center.x, y: center.y, duration: 50 };
+        });
+
+        this.tweens.chain({
+            targets: ballData.container,
+            tweens: tweensList,
+            onComplete: () => {
+                this.board[targetR][targetC] = ballData;
+                
+                if (!this.checkSum20Lines()) {
+                    this.spawnBalls(3);
+                    let newlyCleared = this.checkSum20Lines();
+                    this.generateNextBalls();
+                    if (!newlyCleared && this.getEmptyCells().length > 0) this.isAnimating = false;
+                }
+            }
+        });
+    }
+
+    checkSum20Lines() {
+        let ballsToRemove = new Set();
+
+        for (let r = 0; r < CONFIG.GRID_SIZE; r++) {
+            for (let c = 0; c < CONFIG.GRID_SIZE; c++) {
+                for (let dir of [0, 1, 2]) { 
+                    let oppDir = dir + 3;
+                    
+                    if (!this.getNeighbor(r, c, oppDir)) {
+                        let line = [];
+                        let current = {r, c};
+                        
+                        while (current) {
+                            line.push(current);
+                            current = this.getNeighbor(current.r, current.c, dir);
+                        }
+                        
+                        this.findSumsInLine(line, ballsToRemove);
+                    }
+                }
+            }
+        }
+
+        if (ballsToRemove.size > 0) {
+            this.removeBalls(ballsToRemove);
+            return true;
+        }
+        return false;
+    }
+
+    findSumsInLine(lineCoords, ballsToRemove) {
+        let groups = [];
+        let currentGroup = [];
+        
+        for (let i = 0; i < lineCoords.length; i++) {
+            let pos = lineCoords[i];
+            let cell = this.board[pos.r][pos.c];
+            
+            if (cell) {
+                if (currentGroup.length === 0 || currentGroup[0].color === cell.color) {
+                    currentGroup.push({ pos, number: cell.number, color: cell.color });
+                } else {
+                    groups.push(currentGroup);
+                    currentGroup = [{ pos, number: cell.number, color: cell.color }];
+                }
+            } else {
+                if (currentGroup.length > 0) {
+                    groups.push(currentGroup);
+                    currentGroup = [];
+                }
+            }
+        }
+        if (currentGroup.length > 0) groups.push(currentGroup);
+        
+        for (let group of groups) {
+            for (let start = 0; start < group.length; start++) {
+                let sum = 0;
+                for (let end = start; end < group.length; end++) {
+                    sum += group[end].number;
+                    if (sum === 20) {
+                        for (let k = start; k <= end; k++) {
+                            ballsToRemove.add(`${group[k].pos.r},${group[k].pos.c}`);
+                        }
+                    } else if (sum > 20) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    removeBalls(ballsSet) {
+        this.isAnimating = true;
+        
+        let count = ballsSet.size;
+        this.score += count * 10;
+        this.scoreText.setText(`Score: ${this.score}`);
+
+        ballsSet.forEach(posString => {
+            let [r, c] = posString.split(',').map(Number);
+            let ball = this.board[r][c];
+            this.board[r][c] = null; 
+
+            this.tweens.add({
+                targets: ball.container,
+                scale: 0,
+                alpha: 0,
+                duration: 300,
+                onComplete: () => ball.container.destroy()
+            });
+        });
+
+        this.time.delayedCall(300, () => {
+            if (this.getEmptyCells().length > 0) this.isAnimating = false;
+        });
+    }
+
+    gameOver() {
+        this.isAnimating = true;
+        let overlay = this.add.rectangle(0, 0, this.scale.width, this.scale.height, 0x000000, 0.8).setOrigin(0);
+        this.add.text(this.scale.width / 2, this.scale.height / 2 - 50, 'GAME OVER', { fontFamily: 'Arial Black, sans-serif', fontSize: '64px', fontStyle: 'bold', color: '#ff0000' }).setOrigin(0.5);
+        this.add.text(this.scale.width / 2, this.scale.height / 2 + 30, `Final Score: ${this.score}`, { fontFamily: 'Arial, sans-serif', fontSize: '40px', color: '#ffffff' }).setOrigin(0.5);
+        
+        let restartTxt = this.add.text(this.scale.width / 2, this.scale.height / 2 + 120, 'Tap to Restart', { fontFamily: 'Arial Black, sans-serif', fontSize: '32px', color: '#00ffff' }).setOrigin(0.5);
+        
+        this.tweens.add({ targets: restartTxt, alpha: 0.2, yoyo: true, repeat: -1, duration: 500 });
+
+        this.input.once('pointerdown', () => this.scene.restart());
+    }
+}
+
+const config = {
+    type: Phaser.AUTO,
+    scale: {
+        mode: Phaser.Scale.FIT,
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: 720,
+        height: 1280
+    },
+    backgroundColor: '#161616', // slightly darker background
+    scene: PoolHex20
+};
+
+const game = new Phaser.Game(config);
+
+</script>
+</body>
+</html>
